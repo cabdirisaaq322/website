@@ -1,0 +1,6 @@
+# DownloadHub hosting
+node_modules/
+uploads/*
+!uploads/.gitkeep
+db.json
+.env
