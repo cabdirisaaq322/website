@@ -20,14 +20,19 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { maxAge: '7
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-const storage = multer.diskStorage({
+// Local dev: save to disk. Production (STORAGE_DRIVER=r2/s3): keep in memory,
+// routes stream buffer straight to cloud via Storage.saveBuffer().
+const isCloud = (process.env.STORAGE_DRIVER || 'local') !== 'local';
+const diskStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
     const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
     cb(null, Date.now() + '-' + Math.round(Math.random()*1e6) + '-' + safe);
   }
 });
-const upload = multer({ storage, limits: { fileSize: 1024*1024*1024 } });
+const upload = isCloud
+  ? multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024*1024*1024 } })
+  : multer({ storage: diskStorage, limits: { fileSize: 1024*1024*1024 } });
 
 function slugify(s){ return (s||'app').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'app'; }
 function fmtSize(b){ if(!b) return '—'; if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; if(b<1073741824) return (b/1048576).toFixed(1)+' MB'; return (b/1073741824).toFixed(2)+' GB'; }

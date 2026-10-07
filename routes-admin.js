@@ -12,12 +12,19 @@ function registerAdmin(app, upload){
     });
   });
 
-  app.post('/api/admin/apps', adminAuth, upload.fields([{name:'apk',maxCount:1},{name:'icon',maxCount:1},{name:'screenshots',maxCount:6}]), (req,res)=>{
+  const saveOne = async (f, prefix) => {
+    if (!f) return null;
+    if (f.buffer) { const r = await Storage.saveBuffer(f, prefix); return r ? r.url : null; }
+    return Storage.saveFile(f);
+  };
+
+  app.post('/api/admin/apps', adminAuth, upload.fields([{name:'apk',maxCount:1},{name:'icon',maxCount:1},{name:'screenshots',maxCount:6}]), async (req,res)=>{
     const db=getDB(); const b=req.body||{}; const files=req.files||{};
     const slugBase=slugify(b.name||'app');
     let slug=slugBase, n=2; while(db.apps.find(a=>a.slug===slug)) slug=slugBase+'-'+(n++);
     const apk=(files.apk||[])[0], icon=(files.icon||[])[0], shots=(files.screenshots||[]);
-    const shotsOut=shots.map(f=>Storage.saveFile(f));
+    const shotsOut=[];
+    for (const f of shots) shotsOut.push(await saveOne(f, 'shots'));
     if(b.screenshotUrls) String(b.screenshotUrls).split('\n').map(s=>s.trim()).filter(Boolean).forEach(x=>shotsOut.push(x));
     const app={ id:Date.now().toString(36)+Math.floor(Math.random()*999),
       name:b.name||'Untitled', slug, developer:b.developer||'Unknown',
@@ -27,8 +34,8 @@ function registerAdmin(app, upload){
       featured:(b.featured==='1'||b.featured==='on'), trending:(b.trending==='1'||b.trending==='on'), verified:true,
       description:b.description||'', changelog:b.changelog||'',
       tags:String(b.tags||'').split(',').map(s=>s.trim()).filter(Boolean),
-      icon:icon?Storage.saveFile(icon):(b.iconUrl||null),
-      screenshots:shotsOut, fileUrl:apk?Storage.saveFile(apk):(b.fileUrl||null),
+      icon:icon?await saveOne(icon,'icons'):(b.iconUrl||null),
+      screenshots:shotsOut, fileUrl:apk?await saveOne(apk,'apk'):(b.fileUrl||null),
       updatedAt:Date.now(), createdAt:Date.now(),
       versions:[{version:b.version||'1.0.0', changelog:b.changelog||'', size:apk?apk.size:0, updatedAt:Date.now()}]
     };
@@ -69,14 +76,14 @@ function registerAdmin(app, upload){
   // HERO: get + update one of 3 slides (title/sub/btn/link + image upload or URL)
   app.get('/api/admin/hero', adminAuth, (req,res)=>{ res.json(getDB().hero||[]); });
 
-  app.post('/api/admin/hero', adminAuth, upload.single('img'), (req,res)=>{
+  app.post('/api/admin/hero', adminAuth, upload.single('img'), async (req,res)=>{
     const db=getDB();
     db.hero=db.hero||[{},{},{}];
     while(db.hero.length<3) db.hero.push({});
     const i=Math.max(0,Math.min(2,parseInt(req.body.index)||0));
     const s=db.hero[i]||{};
     ['title','sub','btn','link'].forEach(k=>{ if(req.body[k]!==undefined) s[k]=String(req.body[k]).slice(0,200); });
-    if(req.file) s.img=Storage.saveFile(req.file);
+    if(req.file) s.img = await saveOne(req.file, 'hero');
     else if(req.body.imgUrl!==undefined) s.img=req.body.imgUrl||null;
     if(req.body.clearImg==='1') s.img=null;
     db.hero[i]=s; save(db); res.json(db.hero);
